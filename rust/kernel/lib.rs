@@ -44,6 +44,7 @@ mod error;
 pub mod file;
 pub mod file_operations;
 pub mod miscdev;
+pub mod net;
 pub mod pages;
 pub mod security;
 pub mod str;
@@ -77,8 +78,11 @@ pub mod user_ptr;
 #[doc(hidden)]
 pub use build_error::build_error;
 
+#[doc(hidden)]
+pub use crate::error::from_kernel_result_helper;
+
 pub use crate::error::{Error, Result};
-pub use crate::types::{Mode, ScopeGuard};
+pub use crate::types::{Mode, SavedAsPointer, SavedAsPointerMut, ScopeGuard};
 
 /// Page size defined in terms of the `PAGE_SHIFT` macro from C.
 ///

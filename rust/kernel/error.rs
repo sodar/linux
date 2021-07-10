@@ -129,6 +129,9 @@ impl Error {
     /// Restart the system call.
     pub const ERESTARTSYS: Self = Error(-(bindings::ERESTARTSYS as i32));
 
+    /// Cannot assign requested address
+    pub const EADDRNOTAVAIL: Self = Error(-(bindings::EADDRNOTAVAIL as i32));
+
     /// Creates an [`Error`] from a kernel error code.
     ///
     /// It is a bug to pass an out-of-range `errno`. `EINVAL` would
@@ -276,7 +279,7 @@ where
 #[macro_export]
 macro_rules! from_kernel_result {
     ($($tt:tt)*) => {{
-        $crate::error::from_kernel_result_helper((|| {
+        $crate::from_kernel_result_helper((|| {
             $($tt)*
         })())
     }};
