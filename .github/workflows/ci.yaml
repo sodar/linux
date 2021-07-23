@@ -18,6 +18,7 @@ jobs:
         output: [src] # [src, build]
         install: [rustup] # [rustup, standalone]
         sysroot: [common] # [common, custom]
+        lto: [none] # [none, thin]
 
         exclude:
           # arm 32-bit gcc not yet supported
@@ -32,6 +33,7 @@ jobs:
         # A few independent combinations to avoid exploding the matrix:
         #   - The other option for `output`.
         #   - Different releases for `rustc`.
+        #   - Explicitly enabling `lto` on platforms which support LTO.
         #   - The other three (`install`, `sysroot`) combinations
         #     (they are interrelated, so the cross-product needs to be tested)
         include:
@@ -42,6 +44,25 @@ jobs:
             output: build
             install: rustup
             sysroot: custom
+            lto: none
+
+          - arch: arm64
+            toolchain: llvm
+            config: debug
+            rustc: 2021-06-23
+            output: build
+            install: rustup
+            sysroot: custom
+            lto: thin
+
+          - arch: arm64
+            toolchain: llvm
+            config: release
+            rustc: 2021-06-23
+            output: build
+            install: rustup
+            sysroot: custom
+            lto: thin
 
           - arch: ppc64le
             toolchain: clang
@@ -50,6 +71,7 @@ jobs:
             output: build
             install: standalone
             sysroot: common
+            lto: none
 
           - arch: x86_64
             toolchain: llvm
@@ -58,6 +80,7 @@ jobs:
             output: build
             install: standalone
             sysroot: custom
+            lto: none
 
     steps:
       # Setup: checkout
@@ -120,6 +143,10 @@ jobs:
         run: echo 'MAKE_TOOLCHAIN=CC=clang-12' >> $GITHUB_ENV
       - if: matrix.toolchain == 'llvm'
         run: echo 'MAKE_TOOLCHAIN=LLVM=1' >> $GITHUB_ENV
+
+      # if ThinLTo is enabled, enable LLVM's integrated assembler
+      - if: matrix.toolchain == 'llvm' && matrix.lto == 'thin'
+        run: echo 'MAKE_LTO=LLVM_IAS=1' >> $GITHUB_ENV
 
       - if: matrix.output == 'build'
         run: |
@@ -245,7 +272,10 @@ jobs:
           echo 'obj-m	+= rust_module_parameters_loadable_custom.o'  >> samples/rust/Makefile
 
       # Build
-      - run: mv .github/workflows/kernel-${{ matrix.arch }}-${{ matrix.config }}.config .config
+      - if: matrix.lto == 'none'
+        run: mv .github/workflows/kernel-${{ matrix.arch }}-${{ matrix.config }}.config .config
+      - if: matrix.lto == 'thin'
+        run: mv .github/workflows/kernel-${{ matrix.arch }}-${{ matrix.config }}-thinlto.config .config
 
       - if: matrix.output == 'build'
         run: |
@@ -253,7 +283,7 @@ jobs:
           mv .config ${{ env.BUILD_DIR }}.config
           sed -i 's:samples/rust/:${{ env.BUILD_DIR }}samples/rust/:' .github/workflows/qemu-initramfs.desc
 
-      - run: make ${{ env.MAKE_ARCH }} ${{ env.MAKE_CROSS_COMPILE }} ${{ env.MAKE_TOOLCHAIN }} ${{ env.MAKE_OUTPUT }} ${{ env.MAKE_SYSROOT }} -j3
+      - run: make ${{ env.MAKE_ARCH }} ${{ env.MAKE_CROSS_COMPILE }} ${{ env.MAKE_TOOLCHAIN }} ${{ env.MAKE_LTO }} ${{ env.MAKE_OUTPUT }} ${{ env.MAKE_SYSROOT }} -j3
 
       # Run
       - run: ${{ env.BUILD_DIR }}usr/gen_init_cpio .github/workflows/qemu-initramfs.desc > qemu-initramfs.img
@@ -388,7 +418,8 @@ jobs:
             ${{ env.BUILD_DIR }}vmlinux \
             ${{ env.BUILD_DIR }}${{ env.IMAGE_PATH }}
 
-          size \
+      - run: |
+          .github/workflows/size.sh \
             ${{ env.BUILD_DIR }}samples/rust/*.o \
             ${{ env.BUILD_DIR }}samples/rust/*.ko \
             ${{ env.BUILD_DIR }}drivers/android/rust_binder.o \
@@ -396,16 +427,16 @@ jobs:
             ${{ env.BUILD_DIR }}vmlinux
 
       # Clippy
-      - run: make ${{ env.MAKE_ARCH }} ${{ env.MAKE_CROSS_COMPILE }} ${{ env.MAKE_TOOLCHAIN }} ${{ env.MAKE_OUTPUT }} ${{ env.MAKE_SYSROOT }} -j3 CLIPPY=1
+      - run: make ${{ env.MAKE_ARCH }} ${{ env.MAKE_CROSS_COMPILE }} ${{ env.MAKE_TOOLCHAIN }} ${{ env.MAKE_LTO }} ${{ env.MAKE_OUTPUT }} ${{ env.MAKE_SYSROOT }} -j3 CLIPPY=1
 
       # Docs
-      - run: make ${{ env.MAKE_ARCH }} ${{ env.MAKE_CROSS_COMPILE }} ${{ env.MAKE_TOOLCHAIN }} ${{ env.MAKE_OUTPUT }} ${{ env.MAKE_SYSROOT }} -j3 rustdoc
+      - run: make ${{ env.MAKE_ARCH }} ${{ env.MAKE_CROSS_COMPILE }} ${{ env.MAKE_TOOLCHAIN }} ${{ env.MAKE_LTO }} ${{ env.MAKE_OUTPUT }} ${{ env.MAKE_SYSROOT }} -j3 rustdoc
 
       # Tests
-      - run: make ${{ env.MAKE_ARCH }} ${{ env.MAKE_CROSS_COMPILE }} ${{ env.MAKE_TOOLCHAIN }} ${{ env.MAKE_OUTPUT }} ${{ env.MAKE_SYSROOT }} -j3 rusttest
+      - run: make ${{ env.MAKE_ARCH }} ${{ env.MAKE_CROSS_COMPILE }} ${{ env.MAKE_TOOLCHAIN }} ${{ env.MAKE_LTO }} ${{ env.MAKE_OUTPUT }} ${{ env.MAKE_SYSROOT }} -j3 rusttest
 
       # Formatting
-      - run: make ${{ env.MAKE_ARCH }} ${{ env.MAKE_CROSS_COMPILE }} ${{ env.MAKE_TOOLCHAIN }} ${{ env.MAKE_OUTPUT }} ${{ env.MAKE_SYSROOT }} -j3 rustfmtcheck
+      - run: make ${{ env.MAKE_ARCH }} ${{ env.MAKE_CROSS_COMPILE }} ${{ env.MAKE_TOOLCHAIN }} ${{ env.MAKE_LTO }} ${{ env.MAKE_OUTPUT }} ${{ env.MAKE_SYSROOT }} -j3 rustfmtcheck
 
       # View changes to ccache
       - run: ccache -s
